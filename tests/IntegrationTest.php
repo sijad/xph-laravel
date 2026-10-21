@@ -12,6 +12,15 @@ use Xph\Laravel\XphServiceProvider;
 class IntegrationTest extends TestCase {
   private string $build;
 
+  public function test_xph_dev_process_is_registered_after_default_processes(): void {
+    $this->artisan('dev:list', ['--json' => true])->assertSuccessful();
+
+    $commands = \Illuminate\Foundation\DevCommands::commands();
+    $names = array_column($commands, 'name');
+    $this->assertContains('server', $names);
+    $this->assertSame('xph', $names[array_key_last($names)]);
+  }
+
   protected function getPackageProviders($app): array {
     return [XphServiceProvider::class];
   }
@@ -20,7 +29,7 @@ class IntegrationTest extends TestCase {
     parent::setUp();
     $this->build = sys_get_temp_dir() . '/xph-laravel-' . bin2hex(random_bytes(8));
     mkdir($this->build);
-    $runtime = getenv('XPH_RUNTIME_PATH') ?: __DIR__ . '/../node_modules/xph/runtime/runtime.php';
+    $runtime = getenv('XPH_RUNTIME_PATH') ?: __DIR__ . '/fixtures/runtime.php';
     copy($runtime, $this->build . '/runtime.php');
     file_put_contents($this->build . '/component.php', <<<'PHP'
 <?php
@@ -52,6 +61,24 @@ PHP);
       ],
     ]));
     $this->app['config']->set('xph.build_path', $this->build);
+    $this->app['config']->set('xph.component_prefix', '');
+  }
+
+  public function test_component_prefix_resolves_short_names_and_dependency_assets(): void {
+    $manifestPath = $this->build . '/manifest.json';
+    $manifest = json_decode(file_get_contents($manifestPath), true);
+    $manifest['views/xph/MyComponent'] = $manifest['resources/component'];
+    file_put_contents($manifestPath, json_encode($manifest));
+    $defaults = require __DIR__ . '/../config/xph.php';
+    $this->app['config']->set('xph.component_prefix', $defaults['component_prefix']);
+
+    $renderer = $this->app->make(Renderer::class);
+    $html = Blade::render("@xph('MyComponent', ['title' => 'Prefixed'])");
+
+    $this->assertSame('<h1>Prefixed</h1>', $html);
+    $injected = $renderer->inject($html);
+    $this->assertStringContainsString('/xph/shared.css', $injected);
+    $this->assertStringContainsString('/xph/dependency.css', $injected);
   }
 
   protected function tearDown(): void {
@@ -94,6 +121,22 @@ PHP);
       $this->app['config']->set('app.debug', $previous);
       $this->app->forgetInstance(Renderer::class);
     }
+  }
+
+  public function test_assets_are_injected_when_kernel_is_resolved_before_provider_boot(): void {
+    // Laravel resolves the HTTP kernel before booting application providers.
+    $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
+    $kernel->setGlobalMiddleware(array_values(array_filter(
+      $kernel->getGlobalMiddleware(),
+      fn ($middleware) => $middleware !== \Xph\Laravel\InjectAssets::class,
+    )));
+    (new XphServiceProvider($this->app))->boot();
+    Route::get('/late-provider', fn() => response(Blade::render(
+      "<html><head></head><body>@xph('resources/component')</body></html>"
+    )));
+    $html = $this->get('/late-provider')->assertOk()->getContent();
+    $this->assertSame(1, substr_count($html, 'shared.css'));
+    $this->assertSame(1, substr_count($html, 'component.js'));
   }
 
   public function test_blade_injects_dependency_assets_once_and_resets_between_requests(): void {

@@ -1,0 +1,5 @@
+---
+import Child from './Child.xph';
+export interface Props { title: string }
+---
+<h1>{props.title}</h1><Child /><script>console.log('ready');</script>

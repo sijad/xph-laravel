@@ -1,0 +1,7 @@
+---
+export interface Server { name(): string }
+---
+<script is:server>
+return ['name' => static function (): string { throw new RuntimeException('original failure'); }];
+</script>
+<p>{server.name()}</p>

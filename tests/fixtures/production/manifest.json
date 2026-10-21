@@ -1,0 +1,29 @@
+{
+  "resources/Broken": {
+    "file": "components/resources/Broken.php",
+    "assets": [],
+    "dependencies": []
+  },
+  "resources/Child": {
+    "file": "components/resources/Child.php",
+    "assets": [
+      {
+        "type": "css",
+        "url": "/xph/3896caa51c5d.css"
+      }
+    ],
+    "dependencies": []
+  },
+  "resources/Page": {
+    "file": "components/resources/Page.php",
+    "assets": [
+      {
+        "type": "js",
+        "url": "/xph/1d18f6b91fc8.js"
+      }
+    ],
+    "dependencies": [
+      "resources/Child"
+    ]
+  }
+}

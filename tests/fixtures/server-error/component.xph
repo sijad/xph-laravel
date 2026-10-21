@@ -1,0 +1,4 @@
+<script is:server>
+throw 'failure';
+</script>
+<p>Unreachable</p>

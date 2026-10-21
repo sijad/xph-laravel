@@ -26,7 +26,7 @@ php artisan vendor:publish --tag=xph-config
 
 ## Create a component
 
-Create `resources/component.xph`:
+Create `resources/views/xph/component.xph`:
 
 ```astro
 ---
@@ -59,9 +59,10 @@ Create `xph.config.ts` in the Laravel application root:
 
 ```ts
 export default {
-	entries: ['resources/component.xph'],
+	srcDir: 'resources',
 	outDir: 'storage/framework/xph',
 	assetBase: '/xph/',
+	debug: process.env.APP_DEBUG === 'true',
 };
 ```
 
@@ -72,22 +73,26 @@ npx xph build
 php artisan vendor:publish --tag=xph-assets --force
 ```
 
-Imports are compiled automatically. Add each independently rendered component to `entries`.
+All `.xph` files under `srcDir` are compiled automatically, including imports.
 Keep the generated PHP and manifest in storage; only asset files are published to `public/xph`.
 The default asset publication path is `public/xph`; keep it aligned with `assetBase`.
 Changing `outDir` also requires changing `build_path` in `config/xph.php`.
 
 ## Runtime diagnostics
 
-Source-location diagnostics follow Laravel's `config('app.debug')` setting,
-which normally comes from `APP_DEBUG`. Local applications with `APP_DEBUG=true` get
-original `.xph` source locations automatically; applications with `APP_DEBUG=false`
-leave diagnostics disabled.
+To show original `.xph` source locations in Laravel's debug page and exception logs, build with
+`debug: true` and enable Laravel's `APP_DEBUG`. With the config above, run:
 
-Rebuild Laravel's configuration cache after changing `APP_DEBUG`
-(`php artisan config:cache` if you use cached configuration).
+```sh
+APP_DEBUG=true npx xph build
+```
 
-When enabled, exceptions receive original `.xph` locations in the `xph` context of Laravel's exception logs, including errors wrapped by Blade. The original throwable, stack trace, and causal chain are preserved. Nothing is added to rendered HTML and the adapter does not replace Laravel's error response. Custom exception handlers without Laravel's `buildContextUsing` hook can read `\Xph\runtimeDiagnostics($error)` explicitly. Keep detailed logs private and leave this setting disabled in production unless you deliberately need it.
+The build reads `APP_DEBUG` from the shell environment; Laravel reads it from `.env`.
+Rebuild components and refresh any cached Laravel configuration after changing it.
+Source snippets and editor links require the original component files. If you change
+`srcDir`, set `xph.source_path` in `config/xph.php` to the same source directory
+(the default is `resource_path()`).
+Leave debugging disabled in production.
 
 ## Blade
 
@@ -100,7 +105,7 @@ Create `resources/views/welcome.blade.php`:
     <title>My page</title>
 </head>
 <body>
-    @xph('resources/component', ['title' => $title])
+    @xph('component', ['title' => $title])
 </body>
 </html>
 ```
@@ -118,7 +123,10 @@ Route::get('/', function () {
 Start Laravel with `php artisan serve` and open the URL printed by Artisan. The page
 renders the component, loads its stylesheet, and runs its button script automatically.
 
-The component ID is its path relative to the xph project root, without `.xph`.
+Component names are relative to `resources/views/xph/`, without the `.xph` extension.
+For example, `@xph('nested/Card')` renders `resources/views/xph/nested/Card.xph`.
+To use a different location, publish `xph-config` and update `component_prefix`.
+
 Props are passed as a PHP array; map Eloquent models to the arrays/scalars expected by
 the component contract. No head directive is needed. Component HTML is output directly;
 the xph runtime escapes dynamic text and attributes.
@@ -131,15 +139,44 @@ and event streams are left untouched. HTML response caches must store the inject
 
 ## Development and deployment
 
-After editing a component, run the build and asset publication commands again:
+For local development, link the generated assets so rebuilds are available without
+republishing. Add this entry to the existing `links` array in `config/filesystems.php`:
+
+```php
+public_path('xph') => storage_path('framework/xph/assets'),
+```
+
+If `public/xph` already contains published assets, move that directory aside first.
+Create the initial build and the link:
+
+```sh
+npx xph build
+php artisan storage:link
+```
+
+The package automatically registers an `xph` tab with Laravel's development command.
+Start the development processes together:
+
+```sh
+composer run dev
+```
+
+To run the watcher separately:
+
+```sh
+npx xph dev
+```
+
+It rebuilds components and assets when files change. Refresh the browser to see updates;
+no asset publication is needed while using the link. Keep `assetBase: '/xph/'` aligned
+with the public link.
+
+For deployment, build and publish assets:
 
 ```sh
 npx xph build
 php artisan vendor:publish --tag=xph-assets --force
 ```
-
-`npx xph dev` watches components and rebuilds the output in storage, but does not copy
-updated assets to `public/xph`; run the publication command after rebuilds.
 
 During deployment, build and publish before serving the new release. Include both
 `storage/framework/xph` and `public/xph` in the deployed application. Keep the manifest,
@@ -166,15 +203,17 @@ Route::get('/stream', function () {
 Here, `resources/views/partials/greeting.blade.php` contains:
 
 ```blade
-@xph('resources/component', ['title' => $title])
+@xph('component', ['title' => $title])
 ```
 
 ## Troubleshooting
 
 - **Missing xph build:** run `npx xph build` and check that the compiler's `outDir`
   matches Laravel's `xph.build_path` configuration.
-- **Unknown xph component:** use the project-relative path without `.xph`, add the
-  component to `entries` if it is not already imported, and rebuild.
+- **Unknown xph component:** check the component ID in `storage/framework/xph/manifest.json`.
+  The configured `xph.component_prefix` is prepended to the name passed to `@xph`.
+  Check that the source file is inside
+  `srcDir`, rebuild, and ensure Laravel's `xph.build_path` points to that build.
 - **CSS or JavaScript returns 404:** publish assets again and check that `assetBase`
   is `/xph/` when using the default `public/xph` destination.
 - **Blade prints an old directive or configuration:** run `php artisan view:clear`
@@ -182,28 +221,23 @@ Here, `resources/views/partials/greeting.blade.php` contains:
 
 ## Tests
 
-From this repository:
+Run the PHP test suite with Composer; Node and npm are not needed:
 
 ```sh
-npm install
 composer install
 composer test
-npm test
 ```
 
-The integration suite uses Laravel 13 via Orchestra Testbench and the compiler's real PHP runtime.
-It covers Blade layouts and includes, compiled view reuse, dependency asset ordering,
-request isolation, streamed HTML and failure cleanup, cache headers, missing builds,
-and responses that must remain untouched (JSON, event streams, encoded HTML, and downloads).
+The suite uses Laravel 13 via Orchestra Testbench and committed xph compiler output
+with the real PHP runtime. It covers Blade layouts and includes, compiled view reuse,
+dependency assets, request isolation, streaming, response headers, failure cleanup,
+and source diagnostics in debug and production builds.
 
-The compiler-to-adapter test runs through `npm test`. Both suites use the `xph` npm
-dependency; run `npm install` before running either suite.
-
-To test unreleased runtime changes from a sibling xph checkout, run:
+Fixtures live in `tests/fixtures`; see its README for their provenance. To test an
+unreleased PHP runtime from a sibling checkout:
 
 ```sh
 XPH_RUNTIME_PATH=../xph/packages/xph/runtime/runtime.php composer test
 ```
 
-The runtime diagnostics test requires the current development runtime until those
-functions are included in a published `xph` release.
+Application components still use the Node-based xph compiler described above.

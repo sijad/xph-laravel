@@ -10,7 +10,11 @@ class Renderer {
   private array $emitted = [];
   public bool $streaming = false;
 
-  public function __construct(private readonly string $directory, private readonly bool $diagnostics = false) {
+  public function __construct(
+    private readonly string $directory,
+    private readonly bool $diagnostics = false,
+    private readonly string $componentPrefix = '',
+  ) {
   }
 
   public function reset(): void {
@@ -20,6 +24,8 @@ class Renderer {
   }
 
   public function render(string $component, array $props = []): string {
+    $prefix = trim($this->componentPrefix, '/');
+    $component = $prefix === '' ? $component : $prefix . '/' . $component;
     if (!$this->loaded) {
       if (!is_file($this->directory . '/runtime.php') || !is_file($this->directory . '/manifest.json')) {
         throw new RuntimeException('Missing xph build in ' . $this->directory . '. Run xph build first.');
