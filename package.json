@@ -1,0 +1,12 @@
+{
+  "name": "xph-laravel-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "xph": "^0.1.1",
+    "vitest": "^5.0.5"
+  }
+}
