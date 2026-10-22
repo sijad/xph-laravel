@@ -9,12 +9,10 @@ build files; Node.js is only required when building components.
 
 ## Install
 
-This package is not yet published to Packagist. For local development, clone
-`https://github.com/sijad/xph-laravel` and add a Composer path repository pointing to it:
+Install the package from Packagist and the xph compiler from npm:
 
 ```sh
-composer config repositories.xph path /absolute/path/to/xph-laravel
-composer require xph/laravel:@dev
+composer require xph/laravel:^0.1
 npm install --save-dev xph
 ```
 
